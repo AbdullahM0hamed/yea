@@ -31,7 +31,7 @@ class GradesPage : AppCompatActivity() {
     lateinit var grades: MutableList<String>
 
     private fun scrape() {
-        val data = doAsync {
+        thread {
             try {
                 val soup = get("https://homeaccess.beth.k12.pa.us/HomeAccess/Account/LogOn/index.html")
 
@@ -87,11 +87,13 @@ class GradesPage : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e("Exception", e.toString())
             }
-        }
 
-        setContentView(R.layout.activity_grades_page)
-        val dataBox = findViewById<TextView>(R.id.textView2)
-        dataBox.text = combined.toString()
+            runOnUiThread {
+                setContentView(R.layout.activity_grades_page)
+                val dataBox = findViewById<TextView>(R.id.textView2)
+                dataBox.text = combined.toString()
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
