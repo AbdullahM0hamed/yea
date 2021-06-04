@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.mikepenz.fastadapter.FastAdapter
@@ -15,111 +16,82 @@ import com.mikepenz.fastadapter.binding.AbstractBindingItem
 import com.mikepenz.fastadapter.items.AbstractItem
 import khttp.get
 import khttp.post
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.jetbrains.anko.doAsync
 import org.jsoup.Jsoup
+import kotlin.concurrent.thread
 
-var combined = mutableListOf<SimpleItem>()
+var combined = mutableListOf<String>()
 var clsNames = mutableListOf<String>()
 var avgScores = mutableListOf<String>()
 
 class GradesPage : AppCompatActivity() {
     lateinit var grades: MutableList<String>
 
-    init {
-        var temp = null
-    }
+    private fun scrape() {
+        val data = doAsync {
+            try {
+                val soup = get("https://homeaccess.beth.k12.pa.us/HomeAccess/Account/LogOn/index.html")
 
-    fun scrape(){
+                val jsoup = Jsoup.parse(soup.text)
+                val veriToken = jsoup.getElementsByTag("input").attr("name", "__RequestVerificationToken").attr("value")
 
+                val Username = intent.getStringExtra("Username")
+                val Password = intent.getStringExtra("Password")
+                //val oldToken = intent.getStringExtra("Token")
+                val Token = veriToken//intent.getStringExtra("Token")
 
+                val payload = mapOf("__RequestVerificationToken" to Token, "ReturnUrl" to "/HomeAccess/Classes/Classwork", "SCKTY00328510CustomEnabled" to false, "Database" to 10, "LogOnDetails.UserName" to Username, "LogOnDetails.Password" to Password)
+                val headers = mapOf("Host" to "homeaccess.beth.k12.pa.us", "Referer" to "https://homeaccess.beth.k12.pa.us/HomeAccess/Classes/Classwork")
 
-        runBlocking {
-            launch(kotlinx.coroutines.Dispatchers.IO) {
-                try {
+                val posted = post("https://homeaccess.beth.k12.pa.us/HomeAccess/Account/LogOn/index.html?ReturnUrl=%2fhomeaccess", data = payload, allowRedirects = true, cookies = soup.cookies)
+                val r = posted.url
+                Log.d("PostRes", "$posted, $r")
 
-                    val soup = get("https://homeaccess.beth.k12.pa.us/HomeAccess/Account/LogOn/index.html")
+                val soupi = Jsoup.parse(posted.text)
+                val dataFrame = soupi.select("iframe").attr("src")
+                Log.d("Tag", "https://homeaccess.beth.k12.pa.us$dataFrame")
 
-                    val jsoup = Jsoup.parse(soup.text)
-                    val veriToken = jsoup.getElementsByTag("input").attr("name", "__RequestVerificationToken").attr("value")
+                val Link: String = "https://homeaccess.beth.k12.pa.us$dataFrame"
+                val GradesLocation = post(Link, cookies = soup.cookies, data = payload, headers = headers)//, data = payload
 
-                    val Username = intent.getStringExtra("Username")
-                    val Password = intent.getStringExtra("Password")
-                    val oldToken = intent.getStringExtra("Token")
-                    val Token = veriToken//intent.getStringExtra("Token")
+                Log.d("PostRes", "$GradesLocation")
+                val soupy = Jsoup.parse(GradesLocation.text)
 
-                    val payload = mapOf("__RequestVerificationToken" to Token, "ReturnUrl" to "/HomeAccess/Classes/Classwork", "SCKTY00328510CustomEnabled" to false, "Database" to 10, "LogOnDetails.UserName" to Username, "LogOnDetails.Password" to Password)
-                    val headers = mapOf("Host" to "homeaccess.beth.k12.pa.us", "Referer" to "https://homeaccess.beth.k12.pa.us/HomeAccess/Classes/Classwork")
-
-                    val posted = post("https://homeaccess.beth.k12.pa.us/HomeAccess/Account/LogOn/index.html?ReturnUrl=%2fhomeaccess", data = payload, allowRedirects = true, cookies = soup.cookies)
-                    val r = posted.url
-                    Log.d("PostRes", "$posted, $r")
-
-                    val soupi = Jsoup.parse(posted.text)
-                    val dataFrame = soupi.select("iframe").attr("src")
-                    Log.d("Tag", "https://homeaccess.beth.k12.pa.us$dataFrame")
-
-                    val Link : String = "https://homeaccess.beth.k12.pa.us$dataFrame"
-                    val GradesLocation = post(Link, cookies = soup.cookies, data = payload, headers = headers)//, data = payload
-
-                    Log.d("PostRes", "$GradesLocation")
-                    val soupy = Jsoup.parse(GradesLocation.text)
-
-                    for (cls in soupy.select("a.sg-header-heading")) {
-                        clsNames.add(cls.text())
-                    }
-
-                    for (cls in soupy.select("span.sg-header-heading.sg-right")) {
-                        if (cls.text() == "" || cls.text() == null) {
-                            avgScores.add("Unknown Value")
-                        } else {
-                            avgScores.add(cls.text())
-                        }
-
-                    }
-
-                    Log.d("Sel", "$clsNames, \n $avgScores")
-
-                    var i = 0
-                    ///*
-                    for (cls in clsNames) {
-                        combined.add(cls)
-                        combined.add(avgScores[i])
-                        i++
-                    }
-                    //*/
-
-
-
-
-                    Log.d("Combined", "$combined")
-
-
-
-                    return@launch
+                for (cls in soupy.select("a.sg-header-heading")) {
+                    clsNames.add(cls.text())
                 }
-                catch (e: Exception) {
-                    Log.e("Exception", e.toString())
+
+                for (cls in soupy.select("span.sg-header-heading.sg-right")) {
+                    if (cls.text() == "" || cls.text() == null) {
+                        avgScores.add("Unknown Value")
+                    } else {
+                        avgScores.add(cls.text())
+                    }
+
                 }
+
+                Log.d("Sel", "$clsNames, \n $avgScores")
+
+                for ((i, cls) in clsNames.withIndex()) {
+                    combined.add(cls)
+                    combined.add(avgScores[i])
+                }
+
+                Log.d("Combined", "$combined")
+
+
+
+            } catch (e: Exception) {
+                Log.e("Exception", e.toString())
             }
-
         }
 
         setContentView(R.layout.activity_grades_page)
         val dataBox = findViewById<TextView>(R.id.textView2)
         dataBox.text = combined.toString()
-
-
-
-
-
-
-
-        //val datarows = findViewById<RecyclerView>(R.id.recycling)
-
-        //datarows.adapter()
-
-
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -130,39 +102,37 @@ class GradesPage : AppCompatActivity() {
         findViewById<FloatingActionButton>(R.id.fab).setOnClickListener { view ->
             scrape()
         }
+        val recyclerView: RecyclerView = findViewById<RecyclerView>(R.id.recycling)
+        recyclerView.layoutManager = LinearLayoutManager(this)
+        recyclerView.adapter = Adapter(combined)
+    }
 
-        val combinedList = combined.toList()
+    class Adapter(private val values: List<String>): RecyclerView.Adapter<Adapter.ViewHolder>() {
+        override fun getItemCount() = values.size
 
-        //create the ItemAdapter holding your Items
-        val itemAdapter = ItemAdapter<SimpleItem>(combinedList)
-        //create the managing FastAdapter, by passing in the itemAdapter
-        val fastAdapter = FastAdapter.with(itemAdapter)
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+            val itemView = LayoutInflater.from(parent?.context).inflate(R.layout.text_row_item, parent, false)
+            return ViewHolder(itemView)
+        }
 
-        //set our adapters to the RecyclerView
-        findViewById<RecyclerView>(R.id.recycling).setAdapter(fastAdapter)
+        override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+            holder?.textView?.text = values[position]
+        }
 
-        //val d = SimpleItem(data="g")
+        class ViewHolder(itemView: View?) : RecyclerView.ViewHolder(itemView!!) {
+            var textView: TextView? = null
+            init {
+                textView = itemView?.findViewById(R.id.classNameGrade)
+            }
+        }
 
-        //set the items to your ItemAdapter
 
-        itemAdapter.add(combined)
 
-        /*
-        // ...
-        // Lookup the recyclerview in activity layout
-        val rvGrades = findViewById<View>(R.id.recycling) as RecyclerView
-        // Initialize contacts
-        //contacts = Contact.createContactsList(20)
-        // Create adapter passing in the sample user data
-        val adapter = GradesAdapter(combined)
-        // Attach the adapter to the recyclerview to populate items
-        rvGrades.adapter = adapter
-        // Set layout manager to position the items
-        rvGrades.layoutManager = LinearLayoutManager(this)
-        // That's all!
-        */
     }
 }
+
+
+
 /*
 class BindingIconItem : AbstractBindingItem<BindingIconItem>() {
     var name: String? = null
@@ -180,7 +150,7 @@ class BindingIconItem : AbstractBindingItem<BindingIconItem>() {
 }
 
  */
-
+/*
 class SimpleItem : AbstractItem<SimpleItem.ViewHolder>() {
     var data: String? = null
     //var description: String? = null
@@ -212,6 +182,8 @@ class SimpleItem : AbstractItem<SimpleItem.ViewHolder>() {
         }
     }
 }
+
+ */
 
 /*
 class GradesAdapter (private val mContacts: List<String>) : RecyclerView.Adapter<GradesAdapter.ViewHolder>()
